@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  CodePipeline Poisoning Tester (CPPT) API Gateway with Lambda and DynamoDB
+Parameters:
+  CPPTAPIName:
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    Default: cpptApiGW
+  CPPTLambdaName:
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    Default: cpptLambda
+  CPPTDynamoDBTableName:
+    Type: String
+    AllowedPattern: ^[a-zA-Z0-9_.-]+$
+    MinLength: 3
+    MaxLength: 255
+    Default: cpptTable
+  CPPTStageName:
+    Type: String
+    AllowedPattern: ^[a-zA-Z0-9_.-]+$
+    MinLength: 1
+    MaxLength: 64
+    Default: cpptStage
+  CPPTRouteName:
+    Type: String
+    AllowedPattern: ^[a-zA-Z0-9_.-]+$
+    MinLength: 1
+    MaxLength: 64
+    Default: cpptRoute
+  CPPTAPIKey:
+    Type: String
+    AllowedPattern: ^[a-zA-Z0-9_.-]+$
+    MinLength: 1
+    MaxLength: 64
+    Default: cpptApiKey
+Resources:
+  ApiGatewayRestApiCPPT:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Description: CPPT API Gateway to be called by the poisoned pipeline for testing purposes
+      Name: !Ref CPPTAPIName
+      ProtocolType: HTTP
+      Tags: { "Project": "CodePipeline Poisoning Tester" }
+  APIintegrationCPPT:
+    Type: "AWS::ApiGatewayV2::Integration"
+    Properties:
+      ApiId: !Ref ApiGatewayRestApiCPPT
+      Description: CPPT Lambda Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Join
+        - ""
+        - - "arn:"
+          - !Ref "AWS::Partition"
+          - ":apigateway:"
+          - !Ref "AWS::Region"
+          - ":lambda:path/2015-03-31/functions/"
+          - !GetAtt LambdaCPPT.Arn
+          - /invocations
+      IntegrationMethod: POST
+      ConnectionType: INTERNET
+      PayloadFormatVersion: '2.0'
+  RouteCPPT:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGatewayRestApiCPPT
+      RouteKey: !Sub "POST /${CPPTRouteName}"
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref APIintegrationCPPT
+  StageCPPT:
+    Type: 'AWS::ApiGatewayV2::Stage'
+    Properties:
+      StageName: !Sub "${CPPTStageName}"
+      AutoDeploy: true
+      Description: CPPT Stage
+      ApiId: !Ref ApiGatewayRestApiCPPT
+  LambdaCPPT:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: "import json
+
+import boto3
+
+from botocore.exceptions import ClientError
+
+import os
+
+
+tableName = os.environ['DynamoDBTable']
+
+indexName = os.environ['DynamoDBIndex']
+
+apiKey = os.environ['APIKey']
+
+actions = ['add', 'read', 'update']
+
+
+def lambdahandler(event, context):
+
+\tdata = json.loads(event['body'])
+
+\tif 'key' not in data or data['key'] != apiKey:
+
+\t\treturn {
+
+\t\t\t'statusCode': 401,
+
+\t\t\t'body': json.dumps({'Error': 'Unauthorized'})
+
+\t\t}
+
+\telif data['action'] is None:
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': 'Missing action parameter'})
+
+\t\t}
+
+\telif data['action'] in actions:
+
+\t\toperations = {
+
+\t\t\t'add': lambda x: add(x),
+
+\t\t\t'read': lambda x: read(x),
+
+\t\t\t'update': lambda x: update(x)
+
+\t\t}
+
+\t\treturn operations[data['action']](data)
+
+\telse:
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': 'Invalid action parameter'})
+
+\t\t}
+
+
+def add(data, dynamodb=None):
+
+\trequired = [indexName, 'buildNumber', 'buildId', 'pipelineExecutionId']
+
+\tif not all([r in data and data[r] for r in required]):
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': 'Missing data information: [{0}]'.format(', '.join(required))})
+
+\t\t}
+
+\tif not dynamodb:
+
+\t\tdynamodb = boto3.resource('dynamodb')
+
+\ttable = dynamodb.Table(tableName)
+
+\tresponse = table.put_item(
+
+\tItem={
+
+\t\t\tindexName: data[indexName],
+
+\t\t\t'buildNumber': data['buildNumber'],
+
+\t\t\t'buildId': data['buildId'],
+
+\t\t\t'pipelineExecutionId': data['pipelineExecutionId'],
+
+\t\t\t'container': False,
+
+\t\t\t'server': False
+
+\t\t}
+
+\t)
+
+\treturn response
+
+
+def read(data, dynamodb=None):
+
+\trequired = [indexName]
+
+\tif not all([r in data and data[r] for r in required]):
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': 'Missing information: [{0}]'.format(', '.join(required))})
+
+\t\t}
+
+\tif not dynamodb:
+
+\t\tdynamodb = boto3.resource('dynamodb')
+
+\ttable = dynamodb.Table(tableName)
+
+\ttry:
+
+\t\tresponse = table.get_item(Key={indexName: data[indexName]})
+
+\texcept ClientError as e:
+
+\t\tprint(e.response['Error']['Message'])
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': e.response['Error']['Message']})
+
+\t\t}
+
+\telse:
+
+\t\treturn response
+
+
+def update(data, dynamodb=None):
+
+\trequired = [indexName]
+
+\tif not all([r in data and data[r] for r in required]):
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': 'Missing information: [{0}]'.format(', '.join(required))})
+
+\t\t}
+
+\tif not dynamodb:
+
+\t\tdynamodb = boto3.resource('dynamodb')
+
+\ttable = dynamodb.Table(tableName)
+
+\ttry:
+
+\t\tif 'container' in data and data['container'] == True:
+
+\t\t\texp = 'set container=:x'
+
+\t\t\tval = {':x': data['container']}
+
+\t\telif 'server' in data and data['server'] == True:
+
+\t\t\texp = 'set server=:x'
+
+\t\t\tval = {':x': data['server']}
+
+\t\telse:
+
+\t\t\treturn {
+
+\t\t\t\t'statusCode': 400,
+
+\t\t\t\t'body': json.dumps({'Error': 'Missing information: [\"container\", \"server\"]'})
+
+\t\t\t}
+
+\t\tresponse = table.update_item(
+
+\t\t\t\tKey={
+
+\t\t\t\tindexName: data[indexName]
+
+\t\t\t\t},
+
+\t\t\t\tUpdateExpression=exp,
+
+\t\t\t\tExpressionAttributeValues=val,
+
+\t\t\t\tReturnValues='UPDATED_NEW'
+
+\t\t\t)
+
+\texcept ClientError as e:
+
+\t\tprint(e.response['Error']['Message'])
+
+\t\treturn {
+
+\t\t\t'statusCode': 400,
+
+\t\t\t'body': json.dumps({'Error': e.response['Error']['Message']})
+
+\t\t}
+
+\telse:
+
+\t\treturn response"
+      FunctionName: !Ref CPPTLambdaName
+      Handler: index.lambdahandler
+      Environment:
+        Variables:
+          DynamoDBTable: !Ref CPPTDynamoDBTableName
+          DynamoDBIndex: artifactId
+          APIKey: !Ref CPPTAPIKey
+      MemorySize: 128
+      Role: !GetAtt LambdaRoleCPPT.Arn
+      Runtime: python3.7
+      Tags:
+        - Key: Project
+          Value: CodePipeline Poisoning Tester
+  LambdaPermissionInvokeCPPT:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt LambdaCPPT.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApiCPPT}/*/*/${CPPTRouteName}'
+  LambdaRoleCPPT:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Description: CPPT lambda function role
+      Policies:
+        - PolicyName: CPPTLambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:UpdateItem"
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${CPPTDynamoDBTableName}"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup	
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream	
+                  - logs:PutLogEvents	
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${CPPTLambdaName}:*"
+      RoleName: CPPTLambda
+      Tags:
+        - Key: Project
+          Value: CodePipeline Poisoning Tester
+  DynamoDBCPPT:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: artifactId
+          AttributeType: S
+      BillingMode: PROVISIONED
+      KeySchema:
+        - AttributeName: artifactId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      TableName: !Ref CPPTDynamoDBTableName
+      Tags:
+        - Key: Project
+          Value: CodePipeline Poisoning Tester
+Outputs:
+  OutputCPPTAPIURL:
+    Value: !Sub "https://${ApiGatewayRestApiCPPT}.execute-api.${AWS::Region}.amazonaws.com/${CPPTStageName}/${CPPTRouteName}"
+  OutputCPPTAPIKey:
+    Value: !Ref CPPTAPIKey

