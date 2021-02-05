@@ -14,7 +14,7 @@ The CodePipeline Poisoning Tester (CPPT in advance) is a tool composed by a Pyth
 
 ## Usage
 
-The script requires has dependencies that are listed in the requirements.txt file, which can be used as input for pip3. The script supports common CLI command flags and parameters, so you can use the following to print out the help information.
+The script has dependencies that are listed in the requirements.txt file, which can be used as input for pip3. The script supports common CLI command flags and parameters, so you can use the following to print out the help information.
 
 ```
 ../codepipeline-poisoning-tester
