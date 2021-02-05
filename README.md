@@ -82,7 +82,9 @@ CPPT script start build properties:
         
 - buildspecOverride parameter: 
   - A CPPT crafted buildspec that will poison the output artifact.
-  - No need to worry, this tool only injects a POST request to be executed by the container and the server.
+  - No need to worry, this tool only injects two commands to be executed by the container and the server:
+    - Creates an empty local file.
+    - Sends a POST request to the CPPT API.
 - arifactsOverride parameter:
   - The output artifact location being the same as the one received by querying CodePipeline.
   - This will override the legitimate artifact created within the pipeline execution.
