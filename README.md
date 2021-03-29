@@ -1,6 +1,6 @@
 # CodePipeline Poisoning Tester
 
-The CodePipeline Poisoning Tester (CPPT in advance) is a tool composed by a Python script and an AWS serverless infrastructure that will help verify wether AWS developers could potentially perform a privilege escalation attempt to retrieve secrets and data from the CI/CD pipeline and the production environment. More information about this tool and the risk it attempts to help identify is described in the article available [here](addLinkToArticle).
+The CodePipeline Poisoning Tester (CPPT in advance) is a tool composed by a Python script and an AWS serverless infrastructure that will help verify wether AWS developers could potentially perform a privilege escalation attempt to retrieve secrets and data from the CI/CD pipeline and the production environment. More information about this tool and the risk it attempts to help identify is described in the article available [here](https://www.pwc.be/en/news-publications/2021/the-risk-of-ci-cd-pipeline-poisoning-via-codebuild-.html).
 
 ***Important:*** At this moment, the CPPT tool only supports CodePipeline executions that target an EC2 or On-premise deployment.
 
