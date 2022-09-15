@@ -45,8 +45,7 @@ optional arguments:
   -t [120], --TIMEOUT-MONITOR [120]
                         Timeout for monitoring task in seconds (default: 120)
   -o [file.logs], --OUTPUT-FILE [file.logs]
-                        Ammount of executions to infect (default:
-                        cpptOutput.logs)
+                        File to write tool output (default: cpptOutput.logs)
   -m [1], --MAX-EXECUTIONS [1]
                         Ammount of executions to infect (default: 1)
 
